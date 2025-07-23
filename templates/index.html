@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <title>大文件分片上传与格式转换</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      background: #f9f9f9;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    h1, h3 {
+      text-align: center;
+      color: #333;
+    }
+
+    input[type="file"] {
+      display: block;
+      margin: 20px auto;
+    }
+
+    button {
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 10px auto;
+      display: block;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    #status, #convert-result {
+      text-align: center;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    #progress-container {
+      width: 100%;
+      height: 25px;
+      background: #eee;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 10px;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+    }
+
+    #progress-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(to right, #4caf50, #81c784);
+      color: white;
+      text-align: center;
+      line-height: 25px;
+      transition: width 0.3s ease;
+    }
+
+    #convert-section {
+      display: none;
+      margin-top: 30px;
+      text-align: center;
+    }
+
+    select {
+      padding: 8px;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>PSD转换</h1>
+  <input type="file" id="file" />
+  <button id="upload-btn" onclick="uploadFile()">上传</button>
+  <p id="status"></p>
+
+  <div id="progress-container">
+    <div id="progress-bar">0%</div>
+  </div>
+
+  <div id="convert-section">
+    <h3>转换为格式</h3>
+    <select id="format">
+      <option value="jpg">JPG</option>
+      <option value="png">PNG</option>
+    </select>
+    <button id="convert-btn" onclick="convertFile()">转换</button>
+    <p id="convert-result"></p>
+  </div>
+
+  <script>
+    let uploadedFilename = "";
+
+    async function uploadFile() {
+      const file = document.getElementById("file").files[0];
+      const uploadBtn = document.getElementById("upload-btn");
+      if (!file) return;
+
+      uploadBtn.disabled = true;
+      document.getElementById("status").innerText = "⏳ 开始上传...";
+      const chunkSize = 5 * 1024 * 1024;
+      const totalChunks = Math.ceil(file.size / chunkSize);
+      const filename = file.name;
+      const progressBar = document.getElementById("progress-bar");
+
+      for (let i = 0; i < totalChunks; i++) {
+        const chunk = file.slice(i * chunkSize, Math.min(file.size, (i + 1) * chunkSize));
+        const formData = new FormData();
+        formData.append("file", chunk);
+        formData.append("chunk_index", i);
+        formData.append("filename", filename);
+        formData.append("total_chunks", totalChunks);
+
+        await fetch("/api/upload/upload_chunk", {
+          method: "POST",
+          body: formData,
+        });
+
+        const percent = Math.round(((i + 1) / totalChunks) * 100);
+        progressBar.style.width = percent + "%";
+        progressBar.innerText = percent + "%";
+        document.getElementById("status").innerText = `上传中：第 ${i + 1}/${totalChunks} 片`;
+      }
+
+      const mergeForm = new FormData();
+      mergeForm.append("filename", filename);
+      mergeForm.append("total_chunks", totalChunks);
+      const res = await fetch("/api/upload/merge_chunks", {
+        method: "POST",
+        body: mergeForm
+      });
+      const result = await res.json();
+
+      uploadedFilename = result.path;
+      progressBar.style.backgroundColor = "#2196f3";
+      document.getElementById("status").innerText = "✅ 上传完成：" + result.path;
+
+      document.getElementById("convert-section").style.display = "block";
+      document.getElementById("convert-section").scrollIntoView({ behavior: "smooth" });
+      uploadBtn.disabled = false;
+    }
+
+    async function convertFile() {
+      const format = document.getElementById("format").value;
+      const convertBtn = document.getElementById("convert-btn");
+      convertBtn.disabled = true;
+      document.getElementById("convert-result").innerText = "⏳ 正在转换...";
+
+      const res = await fetch("/api/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: uploadedFilename,
+          target_format: format
+        }),
+      });
+
+      const result = await res.json();
+
+      if (result.converted_url) {
+        document.getElementById("convert-result").innerHTML =
+          `✅ 转换完成：<a href="${result.converted_url}" target="_blank">点击下载</a>`;
+      } else {
+        document.getElementById("convert-result").innerText = "❌ 转换失败";
+      }
+      convertBtn.disabled = false;
+    }
+  </script>
+</body>
+</html>
