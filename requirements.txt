@@ -16,7 +16,7 @@ networkx==3.5
 numpy==2.3.1
 packaging==25.0
 pillow==11.3.0
-psd-tools==1.10.8
+psd-tools==1.12.2
 psutil==7.0.0
 pydantic==2.11.7
 pydantic_core==2.33.2
